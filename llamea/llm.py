@@ -30,7 +30,7 @@ try:
 except ModuleNotFoundError:
     lms = object
 try:
-    from mlx_lm import load, generate
+    from mlx_lm import generate, load
 except ModuleNotFoundError:
     load = None
     generate = None
@@ -40,9 +40,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     ConfigurationSpace = None
 
+from .diffmodemanager import DiffModeManager
 from .solution import Solution
 from .utils import NoCodeException, apply_code_delta
-from .diffmodemanager import DiffModeManager
 
 
 class LLM(ABC):
@@ -254,7 +254,15 @@ class OpenAI_LLM(LLM):
     A manager class for handling requests to OpenAI's GPT models.
     """
 
-    def __init__(self, api_key, model="gpt-4-turbo", temperature=0.8, **kwargs):
+    def __init__(
+        self,
+        api_key,
+        model="gpt-4-turbo",
+        temperature=0.8,
+        base_url=None,
+        default_headers=None,
+        **kwargs,
+    ):
         """
         Initializes the LLM manager with an API key and model name.
 
@@ -262,13 +270,19 @@ class OpenAI_LLM(LLM):
             api_key (str): api key for authentication.
             model (str, optional): model abbreviation. Defaults to "gpt-4-turbo".
                 Options are: gpt-3.5-turbo, gpt-4-turbo, gpt-4o, and others from OpeNAI models library.
+            base_url (str, optional): Custom OpenAI-compatible API base URL.
+            default_headers (dict, optional): Additional headers for the client.
         """
         if openai is None:  # pragma: no cover - optional dependency
             raise ImportError(
                 "openai is required to use OpenAI_LLM. Install the 'openai' package."
             )
-        super().__init__(api_key, model, None, **kwargs)
+        super().__init__(api_key, model, base_url, **kwargs)
         self._client_kwargs = dict(api_key=api_key)
+        if base_url is not None:
+            self._client_kwargs["base_url"] = base_url
+        if default_headers is not None:
+            self._client_kwargs["default_headers"] = default_headers
         self.client = openai.OpenAI(**self._client_kwargs)
         logging.getLogger("openai").setLevel(logging.ERROR)
         logging.getLogger("httpx").setLevel(logging.ERROR)
@@ -553,6 +567,35 @@ class DeepSeek_LLM(OpenAI_LLM):
         self.base_url = "https://api.deepseek.com"
         self._client_kwargs["base_url"] = self.base_url
         self.client = openai.OpenAI(**self._client_kwargs)
+
+
+class OpenRouter_LLM(OpenAI_LLM):
+    """A manager class for OpenRouter models via the OpenAI SDK."""
+
+    def __init__(
+        self,
+        api_key,
+        model="openai/gpt-5.2",
+        temperature=0.8,
+        site_url=None,
+        app_name=None,
+        **kwargs,
+    ):
+        """Initializes OpenRouter LLM with the required base URL."""
+        default_headers = {}
+        if site_url is not None:
+            default_headers["HTTP-Referer"] = site_url
+        if app_name is not None:
+            default_headers["X-OpenRouter-Title"] = app_name
+
+        super().__init__(
+            api_key,
+            model=model,
+            temperature=temperature,
+            base_url="https://openrouter.ai/api/v1",
+            default_headers=default_headers or None,
+            **kwargs,
+        )
 
 
 class LMStudio_LLM(LLM):
