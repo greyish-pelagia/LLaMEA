@@ -10,16 +10,18 @@ import pickle
 import numpy as np
 from ioh import get_problem, logger
 
-from llamea import Gemini_LLM, LLaMEA
-from llamea.utils import prepare_namespace, clean_local_namespace
+from llamea import LLaMEA, OpenRouter_LLM
+from llamea.utils import clean_local_namespace, prepare_namespace
 from misc import OverBudgetException, aoc_logger, correct_aoc
 
 if __name__ == "__main__":
     # Execution code starts here
-    api_key = os.getenv("GOOGLE_API_KEY")
-    ai_model = "gemini-2.5-flash"
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    ai_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY must be set in the environment or .env.")
     experiment_name = "pop1-5"
-    llm = Gemini_LLM(api_key, ai_model)
+    llm = OpenRouter_LLM(api_key, ai_model)
 
     # We define the evaluation function that executes the generated algorithm (solution.code) on the BBOB test suite.
     # It should set the scores and feedback of the solution based on the performance metric, in this case we use mean AOCC.
@@ -29,11 +31,13 @@ if __name__ == "__main__":
 
         code = solution.code
         algorithm_name = solution.name
-        feedback=""
+        feedback = ""
         possible_issue = None
         local_ns = {}
         try:
-            global_ns, possible_issue = prepare_namespace(code, allowed=["numpy"], logger=explogger)
+            global_ns, possible_issue = prepare_namespace(
+                code, allowed=["numpy"], logger=explogger
+            )
             exec(code, global_ns, local_ns)
             local_ns = clean_local_namespace(local_ns, global_ns)
 
@@ -57,9 +61,7 @@ if __name__ == "__main__":
                     for rep in range(3):
                         np.random.seed(rep)
                         try:
-                            algorithm = local_ns[algorithm_name](
-                                budget=budget, dim=dim
-                            )
+                            algorithm = local_ns[algorithm_name](budget=budget, dim=dim)
                             algorithm(problem)
                         except OverBudgetException:
                             pass
@@ -97,6 +99,6 @@ if __name__ == "__main__":
             experiment_name=experiment_name,
             elitism=True,
             HPO=False,
-            budget=100
+            budget=20,
         )
         print(es.run())
