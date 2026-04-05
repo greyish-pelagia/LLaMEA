@@ -280,6 +280,17 @@ def clean_local_namespace(
 
 
 def check_credits() -> None:
+    """Retrieves and displays the credit limit and remaining balance for the current API key.
+
+    This function queries the OpenRouter API key endpoint to check the specific
+    financial limits associated with the provided credentials.
+
+    Args:
+        None. The function retrieves the API key from the environment variables.
+
+    Returns:
+        None. Prints the formatted credit balance (Remaining / Total) in USD to the console.
+    """
 
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
