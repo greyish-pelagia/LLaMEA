@@ -353,4 +353,4 @@ if __name__ == "__main__":
 
     filter_query = sys.argv[1] if len(sys.argv) > 1 else ""
 
-    list_openrouter_models(filter_query)
+    # list_openrouter_models(filter_query)
