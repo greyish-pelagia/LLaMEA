@@ -5,8 +5,10 @@
 # - An LLM instance that will generate the code based on the task prompt.
 
 import os
+from pathlib import Path
 
 import numpy as np
+from dotenv import load_dotenv
 
 from benchmarks.gnbg.loader import make_problem
 from llamea import LLaMEA, OpenRouter_LLM
@@ -15,6 +17,7 @@ from misc import OverBudgetException
 
 if __name__ == "__main__":
     # Execution code starts here
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     api_key = os.getenv("OPENROUTER_API_KEY")
     ai_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
     if not api_key:
@@ -53,8 +56,8 @@ if __name__ == "__main__":
         run_details = []
 
         # Debug small first; switch to range(1, 25) later
-        for fid in range(1, 25):
-            for rep in range(3):
+        for fid in range(1, 3):
+            for rep in range(1):
                 np.random.seed(rep)
                 problem = make_problem(fid)
 
@@ -141,6 +144,6 @@ if __name__ == "__main__":
             experiment_name=experiment_name,
             elitism=True,
             HPO=False,
-            budget=20,
+            budget=1,
         )
         print(es.run())
