@@ -5,7 +5,6 @@
 # - An LLM instance that will generate the code based on the task prompt.
 
 import os
-import pickle
 
 import numpy as np
 from ioh import get_problem, logger
