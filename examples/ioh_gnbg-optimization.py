@@ -1,20 +1,17 @@
-# This is a minimal example of how to use the LLaMEA algorithm with the Gemini LLM to generate optimization algorithms for the GNBG III test suite.
+# This is a minimal example of how to use the LLaMEA algorithm with the Gemini LLM to generate optimization algorithms for the GNBG II test suite.
 # We have to define the following components for LLaMEA to work:
 # - An evaluation function that executes the generated code and evaluates its performance.
 # - A task prompt that describes the problem to be solved.
 # - An LLM instance that will generate the code based on the task prompt.
 
-import csv
 import os
-import time
 from pathlib import Path
 
+import iohgnbg
 import numpy as np
 from dotenv import load_dotenv
-from ioh import get_problem, logger
-from scipy.io import loadmat, savemat
+from ioh import logger
 
-from benchmarks.GNBG_III import gnbg_iii_competition_harness
 from llamea import LLaMEA, OpenRouter_LLM
 from llamea.utils import clean_local_namespace, prepare_namespace
 from misc import OverBudgetException, aoc_logger, correct_aoc
@@ -42,7 +39,7 @@ if __name__ == "__main__":
         local_ns = {}
         try:
             global_ns, possible_issue = prepare_namespace(
-                code, allowed=["numpy", "fitness"], logger=explogger
+                code, allowed=["numpy"], logger=explogger
             )
             exec(code, global_ns, local_ns)
             local_ns = clean_local_namespace(local_ns, global_ns)
@@ -56,26 +53,28 @@ if __name__ == "__main__":
         aucs = []
 
         algorithm = None
-        for dim in [5]:
-            budget = 2000 * dim
-            l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
-            for fid in np.arange(1, 25):
-                for iid in [1, 2, 3]:  # , 4, 5]
-                    problem = get_problem(fid, iid, dim)
-                    problem.attach_logger(l2)
+        budget = 2000
+        l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
 
-                    for rep in range(3):
-                        np.random.seed(rep)
-                        try:
-                            algorithm = local_ns[algorithm_name](budget=budget, dim=dim)
-                            algorithm(problem)
-                        except OverBudgetException:
-                            pass
+        problems = iohgnbg.get_problems(problem_indices=24)
 
-                        auc = correct_aoc(problem, l2, budget)
-                        aucs.append(auc)
-                        l2.reset(problem)
-                        problem.reset()
+        for problem in problems:
+            problem.attach_logger(l2)
+
+            for rep in range(1):
+                np.random.seed(rep)
+                try:
+                    algorithm = local_ns[algorithm_name](
+                        budget=budget, dim=problem.meta_data.n_variables
+                    )
+                    algorithm(problem)
+                except OverBudgetException:
+                    pass
+
+                auc = correct_aoc(problem, l2, budget)
+                aucs.append(auc)
+                l2.reset(problem)
+                problem.reset()
         auc_mean = np.mean(aucs)
         auc_std = np.std(aucs)
 
