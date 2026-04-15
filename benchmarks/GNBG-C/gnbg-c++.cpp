@@ -51,15 +51,19 @@ public:
     double** Mu;
     double** Omega;
     double*** RotationMatrix;
-    GNBG(int func_num);
+    GNBG(int func_num, const char* base_dir);
     ~GNBG();
     double Fitness(double* xvec);
 };
-GNBG::GNBG(int func_num)
-{
-    char buffer[15];
-    sprintf(buffer,"f%d.txt",func_num);
-    ifstream fin(buffer);
+#include <string>
+#include <stdexcept>
+
+GNBG::GNBG(int func_num, const char* base_dir) {
+    std::string path = std::string(base_dir) + "/f" + std::to_string(func_num) + ".txt";
+    std::ifstream fin(path);
+    if (!fin) {
+        throw std::runtime_error("Cannot open " + path);
+    }
     AcceptanceReachPoint = -1;
     FEval = 0;
     fin>>MaxEvals;
@@ -278,65 +282,117 @@ void Optimizer::Run(GNBG& gnbg)
         }
     }
 }
-int main()
-{
-    cout.precision(20);
-    int NRuns = 31;
-    double* Errors = new double[NRuns];
-    double* AcceptancePoints = new double[NRuns];
-    for(int func_num=1;func_num!=25;func_num++)
-    {
-        int NNonEmpty = 0;
-        double meanAcceptance = 0;
-        double meanError = 0;
-        double stdAcceptance = 0;
-        double stdError = 0;
-        for(int run=0;run!=NRuns;run++)
-        {
-            cout<<"Func: "<<func_num<<"\tRun: "<<run<<"\t";
-            GNBG gnbg(func_num);
-            Optimizer Opt(/*population size*/ 100, gnbg);
-            Opt.Run(gnbg);
-            if(true) // save for graphs?
-            {
-                char buffer[100];
-                sprintf(buffer,"Res_DE_f%d_r%d.txt",func_num,run);
-                ofstream fout_c(buffer);
-                fout_c.precision(20);
-                for(int i=0;i!=Opt.BestHistoryIndex;i++)
-                    fout_c<<Opt.BestHistory[i]-gnbg.OptimumValue<<"\n";
-                fout_c.close();
-            }
-            Errors[run] = gnbg.BestFoundResult - gnbg.OptimumValue;
-            AcceptancePoints[run] = gnbg.AcceptanceReachPoint;
-            meanError += Errors[run];
-            meanAcceptance += AcceptancePoints[run]*(AcceptancePoints[run] != -1);
-            NNonEmpty += (AcceptancePoints[run] != -1);
-            cout<<"Error: "<<Errors[run]<<"\tAcceptancePoint: "<<AcceptancePoints[run]<<endl;
-        }
-        meanError /= double(NRuns);
-        if(NNonEmpty > 0)
-            meanAcceptance = meanAcceptance / double(NNonEmpty);
-        else
-            meanAcceptance = 0;
-        for(int run=0;run!=NRuns;run++)
-        {
-            stdError += (Errors[run]-meanError)*(Errors[run]-meanError);
-            stdAcceptance += (AcceptancePoints[run]-meanAcceptance)*(AcceptancePoints[run]-meanAcceptance)*(AcceptancePoints[run] != -1);
-        }
-        if(NRuns > 1)
-            stdError = sqrt(stdError / double(NRuns-1));
-        else
-            stdError = 0;
-        if(NNonEmpty > 1)
-            stdAcceptance = sqrt(stdAcceptance / double(NNonEmpty-1));
-        else
-            stdAcceptance = 0;
-        cout<<"Average FE to reach acceptance result: "<<meanAcceptance<<"\t("<<stdAcceptance<<")\n";
-        cout<<"Acceptance Ratio: "<<double(NNonEmpty)/double(NRuns)*100<<"\n";
-        cout<<"Final result: "<<meanError<<"\t("<<stdError<<")\n";
-    }
-    delete Errors;
-    delete AcceptancePoints;
-    return 0;
+// int main()
+// {
+//     cout.precision(20);
+//     int NRuns = 31;
+//     double* Errors = new double[NRuns];
+//     double* AcceptancePoints = new double[NRuns];
+//     for(int func_num=1;func_num!=25;func_num++)
+//     {
+//         int NNonEmpty = 0;
+//         double meanAcceptance = 0;
+//         double meanError = 0;
+//         double stdAcceptance = 0;
+//         double stdError = 0;
+//         for(int run=0;run!=NRuns;run++)
+//         {
+//             cout<<"Func: "<<func_num<<"\tRun: "<<run<<"\t";
+//             GNBG gnbg(func_num);
+//             Optimizer Opt(/*population size*/ 100, gnbg);
+//             Opt.Run(gnbg);
+//             if(true) // save for graphs?
+//             {
+//                 char buffer[100];
+//                 sprintf(buffer,"Res_DE_f%d_r%d.txt",func_num,run);
+//                 ofstream fout_c(buffer);
+//                 fout_c.precision(20);
+//                 for(int i=0;i!=Opt.BestHistoryIndex;i++)
+//                     fout_c<<Opt.BestHistory[i]-gnbg.OptimumValue<<"\n";
+//                 fout_c.close();
+//             }
+//             Errors[run] = gnbg.BestFoundResult - gnbg.OptimumValue;
+//             AcceptancePoints[run] = gnbg.AcceptanceReachPoint;
+//             meanError += Errors[run];
+//             meanAcceptance += AcceptancePoints[run]*(AcceptancePoints[run] != -1);
+//             NNonEmpty += (AcceptancePoints[run] != -1);
+//             cout<<"Error: "<<Errors[run]<<"\tAcceptancePoint: "<<AcceptancePoints[run]<<endl;
+//         }
+//         meanError /= double(NRuns);
+//         if(NNonEmpty > 0)
+//             meanAcceptance = meanAcceptance / double(NNonEmpty);
+//         else
+//             meanAcceptance = 0;
+//         for(int run=0;run!=NRuns;run++)
+//         {
+//             stdError += (Errors[run]-meanError)*(Errors[run]-meanError);
+//             stdAcceptance += (AcceptancePoints[run]-meanAcceptance)*(AcceptancePoints[run]-meanAcceptance)*(AcceptancePoints[run] != -1);
+//         }
+//         if(NRuns > 1)
+//             stdError = sqrt(stdError / double(NRuns-1));
+//         else
+//             stdError = 0;
+//         if(NNonEmpty > 1)
+//             stdAcceptance = sqrt(stdAcceptance / double(NNonEmpty-1));
+//         else
+//             stdAcceptance = 0;
+//         cout<<"Average FE to reach acceptance result: "<<meanAcceptance<<"\t("<<stdAcceptance<<")\n";
+//         cout<<"Acceptance Ratio: "<<double(NNonEmpty)/double(NRuns)*100<<"\n";
+//         cout<<"Final result: "<<meanError<<"\t("<<stdError<<")\n";
+//     }
+//     delete Errors;
+//     delete AcceptancePoints;
+//     return 0;
+// }
+
+extern "C" {
+
+GNBG* gnbg_create(int problem_index, const char* base_dir) {
+    return new GNBG(problem_index, base_dir);
+}
+
+void gnbg_destroy(GNBG* p) {
+    delete p;
+}
+
+double gnbg_eval(GNBG* p, const double* x) {
+    return p->Fitness(const_cast<double*>(x));
+}
+
+int gnbg_dimension(GNBG* p) {
+    return p->Dimension;
+}
+
+double gnbg_lower(GNBG* p) {
+    return p->MinCoordinate;
+}
+
+double gnbg_upper(GNBG* p) {
+    return p->MaxCoordinate;
+}
+
+int gnbg_budget(GNBG* p) {
+    return p->MaxEvals;
+}
+
+int gnbg_evals(GNBG* p) {
+    return p->FEval;
+}
+
+double gnbg_optimum(GNBG* p) {
+    return p->OptimumValue;
+}
+
+double gnbg_acceptance_threshold(GNBG* p) {
+    return p->AcceptanceThreshold;
+}
+
+double gnbg_acceptance_reach_point(GNBG* p) {
+    return p->AcceptanceReachPoint;
+}
+
+double gnbg_best_found(GNBG* p) {
+    return p->BestFoundResult;
+}
+
 }
