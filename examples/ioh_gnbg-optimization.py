@@ -56,7 +56,10 @@ if __name__ == "__main__":
         budget = 2000
         l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
 
-        problems = iohgnbg.get_problems(problem_indices=24)
+        problems = iohgnbg.get_problems(
+            problem_indices=24,
+            instances_folder="benchmarks/gnbg/official",  # change the problem instances .mat files by specifying the dir name with them
+        )
 
         for problem in problems:
             problem.attach_logger(l2)

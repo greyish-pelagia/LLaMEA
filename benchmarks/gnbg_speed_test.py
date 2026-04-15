@@ -31,13 +31,17 @@ def time_iterations():
 @time_iterations()
 def evaluate_gnbg(budget_mul: int = 2000):
 
-    problems = iohgnbg.get_problems(problem_indices=24)
+    problems = iohgnbg.get_problems(
+        problem_indices=24,
+        instances_folder="benchmarks/gnbg/official",  # change the problem instances .mat files by specifying the dir name with them
+    )
 
     aucs = []
 
     l2 = aoc_logger(budget_mul, upper=1e2, triggers=[logger.trigger.ALWAYS])
 
     for problem in problems:
+        print(problem.meta_data)
         problem.attach_logger(l2)
         x0 = np.zeros(shape=(problem.meta_data.n_variables))
 
