@@ -6,6 +6,7 @@ import numpy as np
 from ioh import get_problem, logger
 from modcma import c_maes
 
+from benchmarks.gnbg.loader import make_problem
 from misc import OverBudgetException, aoc_logger, correct_aoc
 
 
@@ -41,7 +42,6 @@ def evaluate_gnbg(budget_mul: int = 2000):
     l2 = aoc_logger(budget_mul, upper=1e2, triggers=[logger.trigger.ALWAYS])
 
     for problem in problems:
-        print(problem.meta_data)
         problem.attach_logger(l2)
         x0 = np.zeros(shape=(problem.meta_data.n_variables))
 
@@ -117,6 +117,64 @@ def evaluate_bbob(budget_mul: int = 2000):
         )
 
 
+@time_iterations()
+def evaluate_pytgnbg(budget_mul: int = 2000):
+    run_scores = []
+    run_details = []
+
+    for fid in range(1, 25):
+        for rep in range(1):
+            np.random.seed(rep)
+            problem = make_problem(fid)
+
+            x0 = np.zeros(shape=(problem.dim))
+
+            lb = problem.lower
+            ub = problem.upper
+            sigma0 = 0.3 * (ub - lb)
+            budget = problem.dim * budget_mul
+
+            try:
+                c_maes.fmin(
+                    problem,
+                    x0,
+                    sigma0,
+                    budget,
+                )
+            except OverBudgetException:
+                pass
+
+            if np.isfinite(problem.best_y):
+                err = abs(problem.best_y - problem.optimum)
+                score = -np.log10(max(err, 1e-12))
+            else:
+                err = float("inf")
+                score = float("-inf")
+
+            run_scores.append(score)
+            run_details.append(
+                {
+                    "fid": fid,
+                    "rep": rep,
+                    "best_y": problem.best_y,
+                    "err": err,
+                    "fes": problem.evaluations,
+                    "arp": problem.acceptance_reach_point,
+                    "best_x": None
+                    if problem.best_x is None
+                    else problem.best_x.tolist(),
+                }
+            )
+
+    score_mean = float(np.mean(run_scores))
+    score_std = float(np.std(run_scores))
+
+    print(
+        f"CMA-ES got an average Area over the convergence curve (AOCC, 1.0 is the best) score of {score_mean:0.4f} with standard deviation {score_std:0.4f}."
+    )
+
+
 if __name__ == "__main__":
     evaluate_gnbg(2000)
+    evaluate_pytgnbg(2000)
     # evaluate_bbob(2000)
