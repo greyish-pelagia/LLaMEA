@@ -1,117 +1,299 @@
-# This is a minimal example of how to use the LLaMEA algorithm with an LLM of choice from OpenRouter to generate optimization algorithms for the GNBG test suite.
-# We have to define the following components for LLaMEA to work:
-# - An evaluation function that executes the generated code and evaluates its performance.
-# - A task prompt that describes the problem to be solved.
-# - An LLM instance that will generate the code based on the task prompt.
+# Revised GNBG harness with staged evaluation, timing, and robust process-based parallelism.
+from __future__ import annotations
 
+import argparse
+import json
 import os
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from dotenv import load_dotenv
 
-from benchmarks.gnbg.loader import make_problem
+from benchmarks.gnbg_c.loader import make_problem
 from llamea import LLaMEA, OpenRouter_LLM
 from llamea.utils import clean_local_namespace, prepare_namespace
 from misc import OverBudgetException
 
+PROFILE_PRESETS: dict[str, dict[str, Any]] = {
+    "quick": {
+        "problem_ids": [1, 2],
+        "reps": 1,
+        "budget_scale": 0.02,
+        "parallel_workers": 1,
+    },
+    "search": {
+        "problem_ids": [1, 2, 3, 4, 5, 6],
+        "reps": 1,
+        "budget_scale": 0.05,
+        "parallel_workers": 1,
+    },
+    "timing": {
+        "problem_ids": list(range(1, 25)),
+        "reps": 3,
+        "budget_scale": 1.0,
+        "parallel_workers": 1,
+    },
+    "final": {
+        "problem_ids": list(range(1, 25)),
+        "reps": 31,
+        "budget_scale": 1.0,
+        "parallel_workers": max(1, min(8, os.cpu_count() or 1)),
+    },
+}
+
+
+def _safe_set_failure(solution, message: str, error: Exception | None = None):
+    if error is None:
+        solution.set_scores(float("-inf"), message)
+        return
+    detail = f"{type(error).__name__}: {error}"
+    solution.set_scores(float("-inf"), f"{message} {detail}")
+
+
+def _validate_generated_code(code: str, algorithm_name: str, explogger=None):
+    possible_issue = None
+    local_ns: dict[str, Any] = {}
+
+    try:
+        global_ns, possible_issue = prepare_namespace(
+            code, allowed=["numpy"], logger=explogger
+        )
+        exec(code, global_ns, local_ns)
+        local_ns = clean_local_namespace(local_ns, global_ns)
+    except Exception as e:
+        message = "Generated code failed to compile or initialize."
+        if possible_issue:
+            message += f" {possible_issue}."
+        return None, message, e
+
+    if algorithm_name not in local_ns:
+        return None, f"Generated code did not define `{algorithm_name}`.", None
+
+    return local_ns[algorithm_name], None, None
+
+
+def _run_single_case(
+    code: str,
+    algorithm_name: str,
+    fid: int,
+    rep: int,
+    budget_scale: float,
+) -> dict[str, Any]:
+    """
+    Top-level worker function so it can run in separate processes.
+    Reconstructs the algorithm from source code inside the worker.
+    """
+    np.random.seed(rep)
+
+    algorithm_cls, message, error = _validate_generated_code(
+        code, algorithm_name, explogger=None
+    )
+    if algorithm_cls is None:
+        return {
+            "ok": False,
+            "fid": fid,
+            "rep": rep,
+            "error": message
+            if error is None
+            else f"{message} {type(error).__name__}: {error}",
+        }
+
+    try:
+        problem = make_problem(fid)
+        scaled_budget = max(1, int(problem.budget * budget_scale))
+        problem.budget = scaled_budget
+
+        algorithm = algorithm_cls(
+            budget=scaled_budget,
+            dim=problem.dim,
+        )
+
+        t0 = time.perf_counter()
+        try:
+            algorithm(problem)
+        except OverBudgetException:
+            pass
+        elapsed_s = time.perf_counter() - t0
+
+        if np.isfinite(problem.best_y):
+            err = abs(problem.best_y - problem.optimum)
+            score = -np.log10(max(err, 1e-12))
+        else:
+            err = float("inf")
+            score = float("-inf")
+
+        return {
+            "ok": True,
+            "fid": fid,
+            "rep": rep,
+            "best_y": problem.best_y,
+            "err": err,
+            "score": float(score),
+            "fes": int(problem.evaluations),
+            "arp": problem.acceptance_reach_point,
+            "best_x": None if problem.best_x is None else problem.best_x.tolist(),
+            "elapsed_s": elapsed_s,
+            "budget": scaled_budget,
+            "dim": int(problem.dim),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "fid": fid,
+            "rep": rep,
+            "error": f"Runtime error on GNBG f{fid}, rep {rep}. {type(e).__name__}: {e}",
+        }
+
+
+def _evaluate_cases(
+    code: str,
+    algorithm_name: str,
+    problem_ids: list[int],
+    reps: int,
+    budget_scale: float,
+    workers: int,
+):
+    cases = [(fid, rep) for fid in problem_ids for rep in range(reps)]
+
+    if workers <= 1 or len(cases) <= 1:
+        return [
+            _run_single_case(code, algorithm_name, fid, rep, budget_scale)
+            for fid, rep in cases
+        ]
+
+    results: list[dict[str, Any]] = []
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        future_map = {
+            executor.submit(
+                _run_single_case, code, algorithm_name, fid, rep, budget_scale
+            ): (fid, rep)
+            for fid, rep in cases
+        }
+        for future in as_completed(future_map):
+            results.append(future.result())
+    results.sort(key=lambda item: (item["fid"], item["rep"]))
+    return results
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILE_PRESETS.keys()),
+        default="quick",
+        help="Evaluation profile.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Override number of parallel workers.",
+    )
+    parser.add_argument(
+        "--budget-scale",
+        type=float,
+        default=None,
+        help="Override fraction of each problem's FE budget to use.",
+    )
+    parser.add_argument(
+        "--llamea-budget",
+        type=int,
+        default=1,
+        help="Outer LLaMEA budget.",
+    )
+    return parser
+
+
 if __name__ == "__main__":
-    # Execution code starts here
+    args = build_arg_parser().parse_args()
+    preset = PROFILE_PRESETS[args.profile].copy()
+    if args.workers is not None:
+        preset["parallel_workers"] = max(1, args.workers)
+    if args.budget_scale is not None:
+        preset["budget_scale"] = args.budget_scale
+
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     api_key = os.getenv("OPENROUTER_API_KEY")
     ai_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY must be set in the environment or .env.")
+
     experiment_name = "pop1-5"
     llm = OpenRouter_LLM(api_key, ai_model)
 
-    # We define the evaluation function that executes the generated algorithm (solution.code) on the GNBG test suite.
+    print(
+        json.dumps(
+            {
+                "profile": {
+                    "name": args.profile,
+                    "problem_ids": preset["problem_ids"],
+                    "reps": preset["reps"],
+                    "budget_scale": preset["budget_scale"],
+                    "parallel_workers": preset["parallel_workers"],
+                },
+                "llm_model": ai_model,
+                "llamea_budget": args.llamea_budget,
+                "experiment_name": experiment_name,
+            },
+            indent=2,
+        )
+    )
+
     def evaluateGNBG(solution, explogger=None):
         code = solution.code
         algorithm_name = solution.name
-        feedback = ""
-        possible_issue = None
-        local_ns = {}
 
-        try:
-            global_ns, possible_issue = prepare_namespace(
-                code, allowed=["numpy"], logger=explogger
-            )
-            exec(code, global_ns, local_ns)
-            local_ns = clean_local_namespace(local_ns, global_ns)
-        except Exception as e:
-            if possible_issue:
-                feedback = f" {possible_issue}."
-            solution.set_scores(float("-inf"), feedback, e)
+        algorithm_cls, message, error = _validate_generated_code(
+            code, algorithm_name, explogger=explogger
+        )
+        if algorithm_cls is None:
+            _safe_set_failure(solution, message, error)
             return solution
 
-        if algorithm_name not in local_ns:
-            solution.set_scores(
-                float("-inf"),
-                f"Generated code did not define `{algorithm_name}`.",
-            )
+        # Validation succeeded; run isolated cases, reconstructing the algorithm in each worker.
+        t0 = time.perf_counter()
+        results = _evaluate_cases(
+            code=code,
+            algorithm_name=algorithm_name,
+            problem_ids=list(preset["problem_ids"]),
+            reps=int(preset["reps"]),
+            budget_scale=float(preset["budget_scale"]),
+            workers=int(preset["parallel_workers"]),
+        )
+        wall_time_s = time.perf_counter() - t0
+
+        failures = [r for r in results if not r["ok"]]
+        if failures:
+            first = failures[0]
+            _safe_set_failure(solution, first["error"])
             return solution
 
-        run_scores = []
-        run_details = []
-
-        # Debug small first; switch to range(1, 25) later
-        for fid in range(1, 3):
-            for rep in range(1):
-                np.random.seed(rep)
-                problem = make_problem(fid)
-
-                try:
-                    algorithm = local_ns[algorithm_name](
-                        budget=problem.budget,
-                        dim=problem.dim,
-                    )
-                    algorithm(problem)
-                except OverBudgetException:
-                    pass
-                except Exception as e:
-                    solution.set_scores(
-                        float("-inf"),
-                        f"Runtime error on GNBG f{fid}, rep {rep}.",
-                        e,
-                    )
-                    return solution
-
-                if np.isfinite(problem.best_y):
-                    err = abs(problem.best_y - problem.optimum)
-                    score = -np.log10(max(err, 1e-12))
-                else:
-                    err = float("inf")
-                    score = float("-inf")
-
-                run_scores.append(score)
-                run_details.append(
-                    {
-                        "fid": fid,
-                        "rep": rep,
-                        "best_y": problem.best_y,
-                        "err": err,
-                        "fes": problem.evaluations,
-                        "arp": problem.acceptance_reach_point,
-                        "best_x": None
-                        if problem.best_x is None
-                        else problem.best_x.tolist(),
-                    }
-                )
+        run_scores = [r["score"] for r in results]
+        run_details = results
 
         score_mean = float(np.mean(run_scores))
         score_std = float(np.std(run_scores))
+        total_fes = int(sum(r["fes"] for r in results))
+        total_case_time_s = float(sum(r["elapsed_s"] for r in results))
 
         feedback = (
             f"The algorithm {algorithm_name} got an average GNBG score of "
-            f"{score_mean:.4f} (std {score_std:.4f}), where score = -log10(best_error)."
+            f"{score_mean:.4f} (std {score_std:.4f}), where score = -log10(best_error). "
+            f"Profile={args.profile}, cases={len(results)}, total_fes={total_fes}, "
+            f"wall_time={wall_time_s:.2f}s, summed_case_time={total_case_time_s:.2f}s."
         )
 
+        solution.add_metadata("gnbg_profile", args.profile)
+        solution.add_metadata("gnbg_wall_time_s", wall_time_s)
+        solution.add_metadata("gnbg_total_case_time_s", total_case_time_s)
+        solution.add_metadata("gnbg_total_fes", total_fes)
         solution.add_metadata("gnbg_runs", run_details)
         solution.set_scores(score_mean, feedback)
         return solution
 
-    # The task prompt describes the problem to be solved by the LLaMEA algorithm.
     task_prompt = """
     The optimization algorithm will be evaluated on 24 GNBG black-box optimization
     problems. Write Python code for an optimizer with:
@@ -134,7 +316,6 @@ if __name__ == "__main__":
     """
 
     for experiment_i in [1]:
-        # A 1+1 strategy
         es = LLaMEA(
             evaluateGNBG,
             n_parents=1,
@@ -144,6 +325,22 @@ if __name__ == "__main__":
             experiment_name=experiment_name,
             elitism=True,
             HPO=False,
-            budget=1,
+            budget=args.llamea_budget,
         )
-        print(es.run())
+        result = es.run()
+
+        # print("result.__dict__ =", vars(result))
+
+        # metadata = getattr(result, "metadata", {}) or {}
+        # print("feedback =", getattr(result, "feedback", None))
+        print("fitness =", getattr(result, "fitness", None))
+        # print("gnbg_profile =", metadata.get("gnbg_profile"))
+        # print("gnbg_total_fes =", metadata.get("gnbg_total_fes"))
+        # print("gnbg_wall_time_s =", metadata.get("gnbg_wall_time_s"))
+        # print("gnbg_total_case_time_s =", metadata.get("gnbg_total_case_time_s"))
+
+        # runs = metadata.get("gnbg_runs", [])
+        # print("num_runs =", len(runs))
+        # if runs:
+        #     print("first_run =", runs[0])
+        #     print("last_run =", runs[-1])
