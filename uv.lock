@@ -902,6 +902,17 @@ wheels = [
 ]
 
 [[package]]
+name = "dotenv"
+version = "0.9.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dotenv" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/b7/545d2c10c1fc15e48653c91efde329a790f2eecfbbf2bd16003b5db2bab0/dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9", size = 1892, upload-time = "2025-02-19T22:15:01.647Z" },
+]
+
+[[package]]
 name = "emcee"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -2002,6 +2013,7 @@ version = "1.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "configspace" },
+    { name = "dotenv" },
     { name = "google-genai" },
     { name = "joblib" },
     { name = "jsonlines" },
@@ -2067,6 +2079,7 @@ llm-extras = [
 [package.metadata]
 requires-dist = [
     { name = "configspace", specifier = ">=1.2.0,<2" },
+    { name = "dotenv", specifier = ">=0.9.9" },
     { name = "google-genai", specifier = ">=1,<2" },
     { name = "joblib", specifier = ">=1.4.2,<2" },
     { name = "jsonlines", specifier = ">=4.0.0,<5" },

@@ -1,16 +1,20 @@
-# This is a minimal example of how to use the LLaMEA algorithm with the Gemini LLM to generate optimization algorithms for the BBOB test suite.
+# This is a minimal example of how to use the LLaMEA algorithm with the Gemini LLM to generate optimization algorithms for the GNBG III test suite.
 # We have to define the following components for LLaMEA to work:
 # - An evaluation function that executes the generated code and evaluates its performance.
 # - A task prompt that describes the problem to be solved.
 # - An LLM instance that will generate the code based on the task prompt.
 
+import csv
 import os
+import time
 from pathlib import Path
 
 import numpy as np
 from dotenv import load_dotenv
 from ioh import get_problem, logger
+from scipy.io import loadmat, savemat
 
+from benchmarks.GNBG_III import gnbg_iii_competition_harness
 from llamea import LLaMEA, OpenRouter_LLM
 from llamea.utils import clean_local_namespace, prepare_namespace
 from misc import OverBudgetException, aoc_logger, correct_aoc
@@ -27,7 +31,7 @@ if __name__ == "__main__":
 
     # We define the evaluation function that executes the generated algorithm (solution.code) on the BBOB test suite.
     # It should set the scores and feedback of the solution based on the performance metric, in this case we use mean AOCC.
-    def evaluateBBOB(solution, explogger=None):
+    def evaluateGNBG(solution, explogger=None):
         auc_mean = 0
         auc_std = 0
 
@@ -38,7 +42,7 @@ if __name__ == "__main__":
         local_ns = {}
         try:
             global_ns, possible_issue = prepare_namespace(
-                code, allowed=["numpy"], logger=explogger
+                code, allowed=["numpy", "fitness"], logger=explogger
             )
             exec(code, global_ns, local_ns)
             local_ns = clean_local_namespace(local_ns, global_ns)
@@ -93,7 +97,7 @@ if __name__ == "__main__":
     for experiment_i in [1]:
         # A 1+1 strategy
         es = LLaMEA(
-            evaluateBBOB,
+            evaluateGNBG,
             n_parents=1,
             n_offspring=1,
             llm=llm,
