@@ -20,7 +20,7 @@ def time_iterations():
             end_time = time.perf_counter()
 
             execution_time = end_time - start_time
-            print(f"Execution of {func.__name__} took {execution_time}s")
+            print(f"Execution of {func.__name__} took {execution_time:.4f}s")
 
             return execution_time
 
