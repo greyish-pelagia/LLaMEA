@@ -3,11 +3,13 @@ import importlib
 import os
 import re
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Any, Optional
 
 import jsonlines
 import numpy as np
 import requests
+from dotenv import load_dotenv
 
 
 class NoCodeException(Exception):
@@ -291,7 +293,7 @@ def check_credits() -> None:
     Returns:
         None. Prints the formatted credit balance (Remaining / Total) in USD to the console.
     """
-
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY must be set in the environment or .env.")
@@ -353,4 +355,4 @@ if __name__ == "__main__":
 
     filter_query = sys.argv[1] if len(sys.argv) > 1 else ""
 
-    # list_openrouter_models(filter_query)
+    list_openrouter_models(filter_query)

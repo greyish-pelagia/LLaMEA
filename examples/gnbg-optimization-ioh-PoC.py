@@ -1,4 +1,4 @@
-# This is a minimal example of how to use the LLaMEA algorithm with the Gemini LLM to generate optimization algorithms for the BBOB test suite.
+# This is a minimal example of how to use the LLaMEA algorithm with the Gemini LLM to generate optimization algorithms for the GNBG II test suite.
 # We have to define the following components for LLaMEA to work:
 # - An evaluation function that executes the generated code and evaluates its performance.
 # - A task prompt that describes the problem to be solved.
@@ -7,9 +7,10 @@
 import os
 from pathlib import Path
 
+import iohgnbg
 import numpy as np
 from dotenv import load_dotenv
-from ioh import get_problem, logger
+from ioh import logger
 
 from llamea import LLaMEA, OpenRouter_LLM
 from llamea.utils import clean_local_namespace, prepare_namespace
@@ -19,7 +20,7 @@ if __name__ == "__main__":
     # Execution code starts here
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     api_key = os.getenv("OPENROUTER_API_KEY")
-    ai_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+    ai_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash-lite")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY must be set in the environment or .env.")
     experiment_name = "pop1-5"
@@ -27,7 +28,7 @@ if __name__ == "__main__":
 
     # We define the evaluation function that executes the generated algorithm (solution.code) on the BBOB test suite.
     # It should set the scores and feedback of the solution based on the performance metric, in this case we use mean AOCC.
-    def evaluateBBOB(solution, explogger=None):
+    def evaluateGNBG(solution, explogger=None):
         auc_mean = 0
         auc_std = 0
 
@@ -52,26 +53,31 @@ if __name__ == "__main__":
         aucs = []
 
         algorithm = None
-        for dim in [5]:
-            budget = 2000 * dim
-            l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
-            for fid in np.arange(1, 25):
-                for iid in [1, 2, 3]:  # , 4, 5]
-                    problem = get_problem(fid, iid, dim)
-                    problem.attach_logger(l2)
+        budget = 2000
+        l2 = aoc_logger(budget, upper=1e2, triggers=[logger.trigger.ALWAYS])
 
-                    for rep in range(3):
-                        np.random.seed(rep)
-                        try:
-                            algorithm = local_ns[algorithm_name](budget=budget, dim=dim)
-                            algorithm(problem)
-                        except OverBudgetException:
-                            pass
+        problems = iohgnbg.get_problems(
+            problem_indices=24,
+            instances_folder="benchmarks/gnbg/official",  # change the problem instances .mat files by specifying the dir name with them
+        )
 
-                        auc = correct_aoc(problem, l2, budget)
-                        aucs.append(auc)
-                        l2.reset(problem)
-                        problem.reset()
+        for problem in problems:
+            problem.attach_logger(l2)
+
+            for rep in range(1):
+                np.random.seed(rep)
+                try:
+                    algorithm = local_ns[algorithm_name](
+                        budget=budget, dim=problem.meta_data.n_variables
+                    )
+                    algorithm(problem)
+                except OverBudgetException:
+                    pass
+
+                auc = correct_aoc(problem, l2, budget)
+                aucs.append(auc)
+                l2.reset(problem)
+                problem.reset()
         auc_mean = np.mean(aucs)
         auc_std = np.std(aucs)
 
@@ -93,7 +99,7 @@ if __name__ == "__main__":
     for experiment_i in [1]:
         # A 1+1 strategy
         es = LLaMEA(
-            evaluateBBOB,
+            evaluateGNBG,
             n_parents=1,
             n_offspring=1,
             llm=llm,
@@ -101,6 +107,6 @@ if __name__ == "__main__":
             experiment_name=experiment_name,
             elitism=True,
             HPO=False,
-            budget=20,
+            budget=5,
         )
         print(es.run())
