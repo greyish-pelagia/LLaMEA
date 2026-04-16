@@ -20,7 +20,7 @@ if __name__ == "__main__":
     # Execution code starts here
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     api_key = os.getenv("OPENROUTER_API_KEY")
-    ai_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+    ai_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash-lite")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY must be set in the environment or .env.")
     experiment_name = "pop1-5"
@@ -107,6 +107,6 @@ if __name__ == "__main__":
             experiment_name=experiment_name,
             elitism=True,
             HPO=False,
-            budget=20,
+            budget=5,
         )
         print(es.run())
