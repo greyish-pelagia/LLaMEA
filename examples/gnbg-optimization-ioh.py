@@ -30,16 +30,22 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "budget_scale": 0.1,
         "parallel_workers": 6,
     },
+    "hard": {
+        "problem_ids": [9, 13, 3, 10, 14],
+        "reps": 2,
+        "budget_scale": 20.0,
+        "parallel_workers": 8,
+    },
     "timing": {
         "problem_ids": list(range(1, 25)),
         "reps": 3,
-        "budget_scale": 1.0,
+        "budget_scale": 20.0,
         "parallel_workers": 1,
     },
     "final": {
         "problem_ids": list(range(1, 25)),
         "reps": 31,
-        "budget_scale": 1.0,
+        "budget_scale": 20.0,
         "parallel_workers": max(1, min(8, os.cpu_count() or 1)),
     },
 }
