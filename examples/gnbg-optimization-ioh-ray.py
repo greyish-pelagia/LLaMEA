@@ -324,6 +324,8 @@ def _evaluate_cases(
 ):
     cases = [(fid, rep) for fid in problem_ids for rep in range(reps)]
 
+    results = []
+
     if workers <= 1 or len(cases) <= 1:
         results = [
             _run_single_case(code, algorithm_name, fid, rep, budget_scale)
@@ -333,7 +335,13 @@ def _evaluate_cases(
         return results
 
     if not ray.is_initialized():
-        ray.init(num_cpus=workers, ignore_reinit_error=True)
+        try:
+            scratch_path = os.environ["SCRATCH"]
+            ray_tmp_path = "ray_temp"
+            ray.init(_temp_dir=os.path.join(scratch_path, ray_tmp_path), num_cpus=workers, ignore_reinit_error=True)
+        except KeyError:
+            print("Path to $SCRATCH location was not found, initializing ray in cwd")
+            ray.init(num_cpus=workers, ignore_reinit_error=True)
 
     futures = [
         _run_single_case_remote.remote(code, algorithm_name, fid, rep, budget_scale)
