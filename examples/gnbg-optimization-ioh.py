@@ -30,16 +30,22 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "budget_scale": 0.1,
         "parallel_workers": 6,
     },
+    "hard": {
+        "problem_ids": [9, 13, 3, 10, 14],
+        "reps": 2,
+        "budget_scale": 20.0,
+        "parallel_workers": 8,
+    },
     "timing": {
         "problem_ids": list(range(1, 25)),
         "reps": 3,
-        "budget_scale": 1.0,
+        "budget_scale": 20.0,
         "parallel_workers": 1,
     },
     "final": {
         "problem_ids": list(range(1, 25)),
         "reps": 31,
-        "budget_scale": 1.0,
+        "budget_scale": 20.0,
         "parallel_workers": max(1, min(8, os.cpu_count() or 1)),
     },
 }
@@ -155,6 +161,32 @@ def _problem_bounds(problem, dim: int) -> tuple[np.ndarray, np.ndarray]:
     return lower, upper
 
 
+def _problem_optimum_y(problem) -> float:
+    """
+    Best-effort extraction of the problem's known optimum objective value.
+
+    IOH problems typically expose `problem.optimum` as a RealSolution/IntegerSolution
+    with a `.y` attribute. Keep a few defensive fallbacks because the exact wrapper
+    around iohgnbg may differ by version.
+    """
+    optimum = getattr(problem, "optimum", None)
+    if optimum is not None:
+        for attr in ("y", "value", "objective"):
+            value = getattr(optimum, attr, None)
+            if value is not None:
+                return float(value)
+
+    log_info = getattr(problem, "log_info", None)
+    if log_info is not None:
+        objective = getattr(log_info, "objective", None)
+        if objective is not None:
+            return float(objective)
+
+    raise AttributeError(
+        "Could not determine the known optimum objective value from the IOH problem object."
+    )
+
+
 class _IOHProblemAdapter:
     """
     Makes the IOH GNBG problem look like the local GNBG interface expected by many
@@ -171,18 +203,27 @@ class _IOHProblemAdapter:
         self.lower, self.upper = _problem_bounds(problem, self.dim)
         self.bounds = _BoundsView(self.lower, self.upper)
         self.evaluations = 0
+        self.best_y = float("inf")
 
     def __call__(self, x):
         if self.evaluations >= self.budget:
             raise OverBudgetException(
                 f"Evaluation budget exceeded: {self.evaluations} >= {self.budget}"
             )
-        y = self._problem(x)
+
+        y = np.asarray(self._problem(x))
+        if y.size != 1:
+            raise ValueError(f"Expected scalar objective value, got shape {y.shape}")
+        y = float(y.item())
+
         self.evaluations += 1
+        if y < self.best_y:
+            self.best_y = y
         return y
 
     def reset(self):
         self.evaluations = 0
+        self.best_y = float("inf")
         return self._problem.reset()
 
     def __getattr__(self, name: str):
@@ -217,6 +258,7 @@ def _run_single_case(
 
     try:
         problem = _load_ioh_problem(fid)
+        optimum_y = _problem_optimum_y(problem)
         scaled_budget = max(1, int(GNBG_BASE_BUDGET * budget_scale))
         wrapped_problem = _IOHProblemAdapter(problem, scaled_budget)
         l2 = aoc_logger(
@@ -239,6 +281,8 @@ def _run_single_case(
         elapsed_s = time.perf_counter() - t0
 
         auc = float(correct_aoc(problem, l2, scaled_budget))
+        best_y = float(wrapped_problem.best_y)
+        mean_error = float(abs(best_y - optimum_y))
         l2.reset(problem)
         problem.reset()
 
@@ -248,6 +292,9 @@ def _run_single_case(
             "rep": rep,
             "score": auc,
             "auc": auc,
+            "best_y": best_y,
+            "optimum_y": float(optimum_y),
+            "mean_error": mean_error,
             "elapsed_s": elapsed_s,
             "budget": scaled_budget,
             "dim": wrapped_problem.dim,
@@ -388,19 +435,29 @@ if __name__ == "__main__":
             return solution
 
         run_scores = [r["score"] for r in results]
+        run_mean_errors = [r["mean_error"] for r in results]
         run_details = results
 
         score_mean = float(np.mean(run_scores))
         score_std = float(np.std(run_scores))
+        mean_error_mean = float(np.mean(run_mean_errors))
+        mean_error_std = float(np.std(run_mean_errors))
         total_case_time_s = float(sum(r["elapsed_s"] for r in results))
 
         total_fes = int(sum(r.get("fes", 0) for r in results))
 
+        mean_error_by_problem: dict[int, float] = {}
+        for fid in sorted({r["fid"] for r in results}):
+            fid_errors = [r["mean_error"] for r in results if r["fid"] == fid]
+            mean_error_by_problem[fid] = float(np.mean(fid_errors))
+
         feedback = (
             f"The algorithm {algorithm_name} got an average GNBG AOCC score of "
-            f"{score_mean:.4f} (std {score_std:.4f}), where 1.0 is the best. "
-            f"Profile={args.profile}, cases={len(results)}, total_fes={total_fes}, "
-            f"wall_time={wall_time_s:.2f}s, summed_case_time={total_case_time_s:.2f}s."
+            f"{score_mean:.4f} (std {score_std:.4f}), where 1.0 is the best, and "
+            f"an average mean error of {mean_error_mean:.6g} (std {mean_error_std:.6g}), "
+            f"where lower is better. Profile={args.profile}, cases={len(results)}, "
+            f"total_fes={total_fes}, wall_time={wall_time_s:.2f}s, "
+            f"summed_case_time={total_case_time_s:.2f}s."
         )
 
         solution.add_metadata("gnbg_backend", "iohgnbg")
@@ -409,6 +466,9 @@ if __name__ == "__main__":
         solution.add_metadata("gnbg_total_case_time_s", total_case_time_s)
         solution.add_metadata("gnbg_total_fes", total_fes)
         solution.add_metadata("gnbg_runs", run_details)
+        solution.add_metadata("gnbg_mean_error", mean_error_mean)
+        solution.add_metadata("gnbg_mean_error_std", mean_error_std)
+        solution.add_metadata("gnbg_mean_error_by_problem", mean_error_by_problem)
         solution.add_metadata("gnbg_base_budget", GNBG_BASE_BUDGET)
         solution.add_metadata("gnbg_instances_folder", GNBG_INSTANCES_FOLDER)
         solution.set_scores(score_mean, feedback)
