@@ -132,4 +132,54 @@ class budget_logger(AbstractLogger):
     def reset(self):
         super().reset()
 
+def correct_mae(ioh_function, logger, budget):
+    """
+    Corrects MAE if a run stopped early by forward-filling 
+    the last known best error for the remaining budget.
+    """
+    remaining_evals = np.clip(budget - ioh_function.state.evaluations, 0, budget)
+    last_error = abs(ioh_function.state.current_best_internal.y - logger.target_y)
+    
+    total_absolute_error = logger.sum_ae + (remaining_evals * last_error)
+    return total_absolute_error / budget
+
+class mae_logger(AbstractLogger):
+    """Logs the cumulative absolute error over an optimization run."""
+
+    def __init__(
+        self,
+        budget,
+        target_y=0,
+        stop_on_threshold=False,
+        threshold=1e-8,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.sum_ae = 0.0
+        self.budget = budget
+        self.target_y = target_y
+        self.stop_on_threshold = stop_on_threshold
+        self.threshold = threshold
+
+    def __call__(self, log_info: LogInfo):
+        if log_info.evaluations > self.budget:
+            raise Exception("OverBudgetException")
+        if log_info.evaluations == self.budget:
+            return
+        
+        print(self.problem.final_target)
+            
+        current_error = abs(log_info.raw_y_best - self.target_y)
+        
+        if self.stop_on_threshold and current_error < self.threshold:
+            raise Exception("ThresholdReachedException")
+            
+        self.sum_ae += current_error
+
+    def reset(self, func=None, target_y=0):
+        super().reset()
+        self.sum_ae = 0.0
+        self.target_y = target_y
+
 
