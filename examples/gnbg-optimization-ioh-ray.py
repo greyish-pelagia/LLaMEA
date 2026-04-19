@@ -378,6 +378,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=1,
         help="Outer LLaMEA budget.",
     )
+    parser.add_argument(
+        "--archive-path",
+        type=str,
+        default=None,
+        help="Path to the directory that should be taken as starting point for following LLaMEA generations",
+    )
     return parser
 
 
@@ -388,6 +394,7 @@ if __name__ == "__main__":
         preset["parallel_workers"] = max(1, args.workers)
     if args.budget_scale is not None:
         preset["budget_scale"] = args.budget_scale
+    archive_path = args.archive_path
 
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -413,6 +420,7 @@ if __name__ == "__main__":
                 "llm_model": ai_model,
                 "llamea_budget": args.llamea_budget,
                 "experiment_name": experiment_name,
+                "resume_path": archive_path
             },
             indent=2,
         )
@@ -510,18 +518,32 @@ if __name__ == "__main__":
     Give an excellent and novel heuristic algorithm and a one-line description of its main idea.
     """
 
-    for experiment_i in [1]:
-        es = LLaMEA(
-            evaluateGNBG,
-            n_parents=1,
-            n_offspring=1,
-            llm=llm,
-            task_prompt=task_prompt,
-            experiment_name=experiment_name,
-            elitism=True,
-            HPO=False,
-            budget=args.llamea_budget,
-        )
-        result = es.run()
-        print("fitness =", getattr(result, "fitness", None))
-        print("feedback =", getattr(result, "feedback", None))
+    if archive_path:
+        
+        restored_llamea = LLaMEA.warm_start(archive_path)
+
+        if restored_llamea is not None:
+            additional_evals = args.llamea_budget * restored_llamea.n_offspring
+            restored_llamea.budget += additional_evals
+            result = restored_llamea.run()
+        else:
+            print(f"Failed to load archive from {archive_path}")
+            exit(1)
+
+    else:
+        for experiment_i in [1]:
+            es = LLaMEA(
+                evaluateGNBG,
+                n_parents=1,
+                n_offspring=1,
+                llm=llm,
+                task_prompt=task_prompt,
+                experiment_name=experiment_name,
+                elitism=True,
+                HPO=False,
+                budget=args.llamea_budget,
+                niching="map_elites",
+            )
+            result = es.run()
+    print("fitness =", getattr(result, "fitness", None))
+    print("feedback =", getattr(result, "feedback", None))
