@@ -163,9 +163,97 @@ def mega_cmaes_gnbg(budget_mul: int = 2000, debug: int = 0):
     run_gnbg_benchmark(logic, "Mega-CMA-ES", budget_mul, debug)
 
 
+@time_iterations()
+def test_erqics(budget_mul: int = 2000, debug: int = 0):
+    from benchmarks.best_algos_totest.erqics import ERQICS
+
+    def logic(problem, dim, budget):
+        alg = ERQICS(budget=budget, dim=dim)
+        alg(problem)
+
+    run_gnbg_benchmark(logic, "ERQICS", budget_mul, debug)
+
+@time_iterations()
+def test_mcma(budget_mul: int = 2000, debug: int = 0):
+    from benchmarks.best_algos_totest.mcma import MCMA
+
+    def logic(problem, dim, budget):
+        alg = MCMA(budget=budget, dim=dim)
+        alg(problem)
+
+    run_gnbg_benchmark(logic, "MCMA", budget_mul, debug)
+
+@time_iterations()
+def test_csqi(budget_mul: int = 2000, debug: int = 0):
+    from benchmarks.best_algos_totest.csqi import CSQI
+
+    def logic(problem, dim, budget):
+        alg = CSQI(budget=budget, dim=dim)
+        alg(problem)
+
+    run_gnbg_benchmark(logic, "CSQI", budget_mul, debug)
+
+@time_iterations()
+def test_mpso(budget_mul: int = 2000, debug: int = 0):
+    from benchmarks.best_algos_totest.mpso import MPSO
+
+    def logic(problem, dim, budget):
+        alg = MPSO(budget=budget, dim=dim)
+        alg(problem)
+
+    run_gnbg_benchmark(logic, "MPSO", budget_mul, debug)
+
+@time_iterations()
+def test_rqics(budget_mul: int = 2000, debug: int = 0):
+    from benchmarks.best_algos_totest.rqics import RQICS
+
+    def logic(problem, dim, budget):
+        alg = RQICS(budget=budget, dim=dim)
+        alg(problem)
+
+    run_gnbg_benchmark(logic, "RQICS", budget_mul, debug)
+
+@time_iterations()
+def test_mde_qics(budget_mul: int = 2000, debug: int = 0):
+    from benchmarks.best_algos_totest.mde_qics import MDEQICS
+
+    def logic(problem, dim, budget):
+        alg = MDEQICS(budget=budget, dim=dim)
+        alg(problem)
+
+    run_gnbg_benchmark(logic, "MDE-QICS", budget_mul, debug)
+
+@time_iterations()
+def test_bhqi(budget_mul: int = 2000, debug: int = 0):
+    from benchmarks.best_algos_totest.bhqi import BHQI
+
+    def logic(problem, dim, budget):
+        alg = BHQI(budget=budget, dim=dim)
+        alg(problem)
+
+    run_gnbg_benchmark(logic, "BHQI", budget_mul, debug)
+
+@time_iterations()
+def test_tsri_csqi(budget_mul: int = 2000, debug: int = 0):
+    from benchmarks.best_algos_totest.tsri_csqi import TSRICSQI
+
+    def logic(problem, dim, budget):
+        alg = TSRICSQI(budget=budget, dim=dim)
+        alg(problem)
+
+    run_gnbg_benchmark(logic, "TSRI-CSQI", budget_mul, debug)
+
 if __name__ == "__main__":
-    cmaes_gnbg(20000, debug=10)
-    bipop_cmaes_gnbg(20000, debug=10)
-    ipop_cmaes_gnbg(20000, debug=10)
-    mirrored_cmaes_gnbg(20000, debug=10)
-    mega_cmaes_gnbg(20000, debug=10)
+    # cmaes_gnbg(20000, debug=10)
+    # bipop_cmaes_gnbg(2000, debug=10)
+    # ipop_cmaes_gnbg(20000, debug=10)
+    # mirrored_cmaes_gnbg(20000, debug=10)
+    # mega_cmaes_gnbg(20000, debug=10)
+    # test_bhqi(2000, debug=0)
+    # test_csqi(2000, debug=0)
+    # test_erqics(2000, debug=0)
+    # test_mde_qics(2000, debug=0)
+    # test_mcma(2000, debug=0)
+    # test_mpso(2000, debug=0)
+    # test_rqics(2000, debug=0)
+    test_tsri_csqi(60000, debug=0)

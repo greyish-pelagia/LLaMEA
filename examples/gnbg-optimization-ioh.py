@@ -42,6 +42,12 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "budget_scale": 1.0,
         "parallel_workers": max(1, min(8, os.cpu_count() or 1)),
     },
+    "challenge": {
+        "problem_ids": [3, 9, 10, 11, 12, 13, 14],
+        "reps": 31,
+        "budget_scale": 1.0,
+        "parallel_workers": max(1, min(8, os.cpu_count() or 1)),
+    },
 }
 
 GNBG_INSTANCES_FOLDER = "benchmarks/gnbg/official"

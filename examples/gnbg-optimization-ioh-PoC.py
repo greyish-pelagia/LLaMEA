@@ -64,7 +64,7 @@ if __name__ == "__main__":
         for problem in problems:
             problem.attach_logger(l2)
 
-            for rep in range(1):
+            for rep in range(3):
                 np.random.seed(rep)
                 try:
                     algorithm = local_ns[algorithm_name](
@@ -91,8 +91,8 @@ if __name__ == "__main__":
 
     # The task prompt describes the problem to be solved by the LLaMEA algorithm.
     task_prompt = """
-    The optimization algorithm should handle a wide range of tasks, which is evaluated on the BBOB test suite of 24 noiseless functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `def __call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
-    The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -5.0 (lower bound) and 5.0 (upper bound). The dimensionality can be varied.
+    The optimization algorithm should handle a wide range of tasks, which is evaluated on the GNBG II test suite of 24 functions. Your task is to write the optimization algorithm in Python code. The code should contain an `__init__(self, budget, dim)` function and the function `def __call__(self, func)`, which should optimize the black box function `func` using `self.budget` function evaluations.
+    The func() can only be called as many times as the budget allows, not more. Each of the optimization functions has a search space between -100.0 (lower bound) and 100.0 (upper bound). Each problem has 30 dimensions.
     Give an excellent and novel heuristic algorithm to solve this task and also give it a one-line description with the main idea.
     """
 
@@ -107,6 +107,6 @@ if __name__ == "__main__":
             experiment_name=experiment_name,
             elitism=True,
             HPO=False,
-            budget=5,
+            budget=100,
         )
         print(es.run())
