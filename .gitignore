@@ -203,4 +203,4 @@ llamea/test.ipynb
 *.slurm
 slurm_logs
 log_analysis.py
-generation_fitness.png
+generation_fitness*.png

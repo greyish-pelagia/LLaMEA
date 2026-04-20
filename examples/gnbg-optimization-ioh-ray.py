@@ -519,15 +519,21 @@ if __name__ == "__main__":
     """
 
     if archive_path:
-        
-        restored_llamea = LLaMEA.warm_start(archive_path)
 
-        if restored_llamea is not None:
-            additional_evals = args.llamea_budget * restored_llamea.n_offspring
-            restored_llamea.budget += additional_evals
-            result = restored_llamea.run()
-        else:
-            print(f"Failed to load archive from {archive_path}")
+        try:
+        
+            es2 = LLaMEA.warm_start(archive_path)
+
+            if es2 is not None:
+                additional_evals = args.llamea_budget * es2.n_offspring
+                es2.budget += additional_evals
+
+                print(f"Resuming from config loaded from: {archive_path}:")
+                for key, value in es2.__dict__.items():
+                    print(key, ":", value)
+                result = es2.run()
+        except Exception as e:
+            print(f"Failed to load archive from {archive_path}\n{e.__repr__()}")
             exit(1)
 
     else:
@@ -542,7 +548,7 @@ if __name__ == "__main__":
                 elitism=True,
                 HPO=False,
                 budget=args.llamea_budget,
-                niching="map_elites",
+                niching="map_elites", # Added Map Elites; comment out to exclude
             )
             result = es.run()
     print("fitness =", getattr(result, "fitness", None))
