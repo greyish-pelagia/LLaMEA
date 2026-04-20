@@ -6,7 +6,7 @@ from ioh import logger
 from modcma import c_maes
 
 from benchmarks.gnbg_speed_test import time_iterations
-from misc import OverBudgetException, aoc_logger, correct_aoc, mae_logger, correct_mae
+from misc import OverBudgetException, aoc_logger, correct_aoc
 
 
 def run_gnbg_benchmark(optimizer_fn, name: str, budget_mul: int = 2000, debug: int = 0):
@@ -17,14 +17,11 @@ def run_gnbg_benchmark(optimizer_fn, name: str, budget_mul: int = 2000, debug: i
     )
 
     aucs = []
-    maes = []
     debug_dict = {}
     l2 = aoc_logger(budget_mul, upper=1e2, triggers=[logger.trigger.ALWAYS])
 
     for problem in problems:
-        l3 = mae_logger(budget_mul, triggers=[logger.trigger.ALWAYS], target_y=problem.optimum.y)
         problem.attach_logger(l2)
-        problem.attach_logger(l3)
         dim = problem.meta_data.n_variables
         budget = dim * budget_mul
 
@@ -35,8 +32,6 @@ def run_gnbg_benchmark(optimizer_fn, name: str, budget_mul: int = 2000, debug: i
 
         auc = correct_aoc(problem, l2, budget)
         aucs.append(auc)
-        mae = correct_mae(problem, l3, budget)
-        maes.append(mae)
 
         debug_dict[problem.meta_data.name] = {
             "Num evaluations": problem.state.evaluations,
@@ -46,15 +41,11 @@ def run_gnbg_benchmark(optimizer_fn, name: str, budget_mul: int = 2000, debug: i
             "AUC": auc,
         }
         l2.reset(problem)
-        l3.reset(problem)
         problem.reset()
 
     auc_mean = np.mean(aucs)
     auc_std = np.std(aucs)
-
-    mae_mean = np.mean(maes)
-    mae_std = np.std(maes)
-    print(f"{name} Avg Error: {mae_mean:.0.4f} (std: {mae_std:.0.4f})\naverage AOCC: {auc_mean:0.4f} (std: {auc_std:0.4f})")
+    print(f"{name} average AOCC: {auc_mean:0.4f} (std: {auc_std:0.4f})")
 
     if debug == 10:
         top_3 = dict(sorted(debug_dict.items(), key=lambda item: item[1]["AUC"])[:3])
@@ -173,4 +164,8 @@ def mega_cmaes_gnbg(budget_mul: int = 2000, debug: int = 0):
 
 
 if __name__ == "__main__":
-    cmaes_gnbg(200, debug=0)
+    cmaes_gnbg(20, debug=0)
+    # bipop_cmaes_gnbg(20000, debug=10)
+    # ipop_cmaes_gnbg(20000, debug=10)
+    # mirrored_cmaes_gnbg(20000, debug=10)
+    # mega_cmaes_gnbg(20000, debug=10)
