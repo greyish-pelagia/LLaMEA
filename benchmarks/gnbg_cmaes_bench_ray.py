@@ -9,9 +9,10 @@ import numpy as np
 from ioh import logger
 from modcma import c_maes
 from pathlib import Path
+from datetime import datetime as dt
 
 from benchmarks.gnbg_speed_test import time_iterations
-from misc import OverBudgetException, aoc_logger, correct_aoc, mae_logger, correct_mae
+from misc import OverBudgetException, ThresholdReachedException, aoc_logger, correct_aoc, mae_logger, correct_mae
 
 
 @ray.remote
@@ -23,10 +24,14 @@ def _evaluate_single_problem(optimizer_fn, problem_index, budget_mul):
     )[0]
 
     dim = problem.meta_data.n_variables
-    budget = dim * budget_mul
+    if problem_index >= 16:
+        budget = dim * budget_mul * 2
+    else:
+        budget = dim * budget_mul
+    budget_to_thresh = None
 
     l2 = aoc_logger(budget_mul, upper=1e2, triggers=[logger.trigger.ALWAYS])
-    l3 = mae_logger(budget_mul, triggers=[logger.trigger.ALWAYS])
+    l3 = mae_logger(budget_mul, triggers=[logger.trigger.ALWAYS], stop_on_threshold=True)
     problem.attach_logger(l2)
     problem.attach_logger(l3)
 
@@ -34,13 +39,16 @@ def _evaluate_single_problem(optimizer_fn, problem_index, budget_mul):
         optimizer_fn(problem, dim, budget)
     except OverBudgetException:
         pass
+    except ThresholdReachedException:
+        budget_to_thresh = problem.state.evaluations
 
     auc = correct_aoc(problem, l2, budget)
     mae = correct_mae(problem, l3, budget_mul)
     final_error = float(abs(problem.state.current_best_internal.y - problem.optimum.y))
     debug_info = {
         "Num evaluations": problem.state.evaluations,
-        "Final target found": problem.state.final_target_found,
+        "Final target found": True if budget_to_thresh is not None else problem.state.final_target_found,
+        "Budget to thresh": budget_to_thresh,
         "Current best": problem.state.current_best.y,
         "Problem optimum": problem.optimum.y,
         "AUC": auc,
@@ -54,7 +62,8 @@ def _evaluate_single_problem(optimizer_fn, problem_index, budget_mul):
     
     return problem.meta_data.name, auc, debug_info
 
-def run_gnbg_benchmark(optimizer_fn, name: str, budget_mul: int = 2000, debug: int = 0):
+@ray.remote(num_cpus=0)
+def run_gnbg_benchmark_task(optimizer_fn, name: str, budget_mul: int = 2000, debug: int = 0, iteration: int = 0):
     """Generic runner for GNBG problems using Ray."""
     # Distribute the 24 problems across Ray workers
     futures = [
@@ -83,19 +92,27 @@ def run_gnbg_benchmark(optimizer_fn, name: str, budget_mul: int = 2000, debug: i
         print(json.dumps(debug_dict, indent=4))
 
     return {
+        "timestamp": dt.now().isoformat(),
         "name": name,
+        "iter": iteration,
         "Average Error:": ae_mean,
         "AE std": ae_std,
         "Average AOCC": auc_mean,
-        "AUCC std": auc_std
+        "AUCC std": auc_std,
+        "Debug dict": debug_dict,
+
     }
 
 def run_whole_benchmark(optimizer_fn, name: str, budget_mul: int = 2000, debug: int = 0, reps: int = 1, out_path: str = None):
-    for i in range(reps):
-        result = run_gnbg_benchmark(optimizer_fn, name, budget_mul, debug)
-        result["iter"] = i
+    futures = [
+        run_gnbg_benchmark_task.remote(optimizer_fn, name, budget_mul, debug, i)
+        for i in range(reps)
+    ]
 
-        if out_path:
+    results = ray.get(futures)
+
+    if out_path:
+        for result in results:
             append_jsonl(out_path, result)
 
 def append_jsonl(path: str | Path, payload: dict):
@@ -115,103 +132,35 @@ def cmaes_gnbg(budget_mul: int = 2000, debug: int = 0, reps: int = 1, out_path: 
 
     run_whole_benchmark(cmaes_logic, "CMA-ES", budget_mul, debug, reps=reps, out_path=out_path)
 
-
 @time_iterations()
-def bipop_cmaes_gnbg(budget_mul: int = 2000, debug: int = 0):
-    modules = c_maes.parameters.Modules()
-    modules.active = True
-    modules.restart_strategy = c_maes.options.RestartStrategy.BIPOP
-
-    def bipop_logic(problem, dim, budget):
-        lb, ub = problem.bounds.lb[0], problem.bounds.ub[0]
-        x0 = np.random.uniform(lb, ub, size=dim)
-        settings = c_maes.parameters.Settings(
-            dim=dim,
-            modules=modules,
-            x0=x0,
-            sigma0=0.3 * (ub - lb),
-            budget=budget,
-            lb=problem.bounds.lb,
-            ub=problem.bounds.ub,
-        )
-        cma = c_maes.ModularCMAES(c_maes.Parameters(settings))
-        cma.run(problem)
-
-    run_gnbg_benchmark(bipop_logic, "BIPOP-CMA-ES", budget_mul, debug)
-
-
-@time_iterations()
-def ipop_cmaes_gnbg(budget_mul: int = 2000, debug: int = 0):
-    modules = c_maes.parameters.Modules()
-    modules.active = False
-    modules.restart_strategy = c_maes.options.RestartStrategy.IPOP
+def test_algo1(budget_mul: int = 2000, debug: int = 0, reps: int = 1, out_path: str = None):
+    from benchmarks.best_algos_totest.AdaptiveMirrorAntiRank1CMARefinedV5_TrustRegionNoiseRobust import AdaptiveMirrorAntiRank1CMARefinedV5_TrustRegionNoiseRobust
 
     def logic(problem, dim, budget):
-        lb, ub = problem.bounds.lb[0], problem.bounds.ub[0]
-        x0 = np.random.uniform(lb, ub, size=dim)
-        settings = c_maes.parameters.Settings(
-            dim=dim,
-            modules=modules,
-            x0=x0,
-            sigma0=0.3 * (ub - lb),
-            budget=budget,
-            lb=problem.bounds.lb,
-            ub=problem.bounds.ub,
-        )
-        cma = c_maes.ModularCMAES(c_maes.Parameters(settings))
-        cma.run(problem)
+        alg = AdaptiveMirrorAntiRank1CMARefinedV5_TrustRegionNoiseRobust(budget=budget, dim=dim)
+        alg(problem)
 
-    run_gnbg_benchmark(logic, "IPOP-CMA-ES", budget_mul, debug)
-
+    run_whole_benchmark(logic, "AdaptiveMirrorAntiRank1CMARefinedV5_TrustRegionNoiseRobust", budget_mul, debug, reps=reps, out_path=out_path)
 
 @time_iterations()
-def mirrored_cmaes_gnbg(budget_mul: int = 2000, debug: int = 0):
-    modules = c_maes.parameters.Modules()
-    modules.mirrored = c_maes.options.Mirror.MIRRORED
+def test_algo2(budget_mul: int = 2000, debug: int = 0, reps: int = 1, out_path: str = None):
+    from benchmarks.best_algos_totest.AdaptiveTrustRegionMixtureRestartCMA import AdaptiveTrustRegionMixtureRestartCMA
 
     def logic(problem, dim, budget):
-        lb, ub = problem.bounds.lb[0], problem.bounds.ub[0]
-        x0 = np.random.uniform(lb, ub, size=dim)
-        settings = c_maes.parameters.Settings(
-            dim=dim,
-            modules=modules,
-            x0=x0,
-            sigma0=0.3 * (ub - lb),
-            budget=budget,
-            lb=problem.bounds.lb,
-            ub=problem.bounds.ub,
-        )
-        cma = c_maes.ModularCMAES(c_maes.Parameters(settings))
-        cma.run(problem)
+        alg = AdaptiveTrustRegionMixtureRestartCMA(budget=budget, dim=dim)
+        alg(problem)
 
-    run_gnbg_benchmark(logic, "Mirrored-CMA-ES", budget_mul, debug)
-
+    run_whole_benchmark(logic, "AdaptiveTrustRegionMixtureRestartCMA", budget_mul, debug, reps=reps, out_path=out_path)
 
 @time_iterations()
-def mega_cmaes_gnbg(budget_mul: int = 2000, debug: int = 0):
-    modules = c_maes.parameters.Modules()
-    modules.mirrored = c_maes.options.Mirror.PAIRWISE
-    modules.active = True
-    modules.restart_strategy = c_maes.options.RestartStrategy.BIPOP
-    modules.sampler = c_maes.options.BaseSampler.HALTON
-    modules.orthogonal = True
+def test_algo3(budget_mul: int = 2000, debug: int = 0, reps: int = 1, out_path: str = None):
+    from benchmarks.best_algos_totest.candidate import Algorithm
 
     def logic(problem, dim, budget):
-        lb, ub = problem.bounds.lb[0], problem.bounds.ub[0]
-        x0 = np.random.uniform(lb, ub, size=dim)
-        settings = c_maes.parameters.Settings(
-            dim=dim,
-            modules=modules,
-            x0=x0,
-            sigma0=0.3 * (ub - lb),
-            budget=budget,
-            lb=problem.bounds.lb,
-            ub=problem.bounds.ub,
-        )
-        cma = c_maes.ModularCMAES(c_maes.Parameters(settings))
-        cma.run(problem)
+        alg = Algorithm(budget=budget, dim=dim)
+        alg(problem)
 
-    run_gnbg_benchmark(logic, "Mega-CMA-ES", budget_mul, debug)
+    run_whole_benchmark(logic, "CodexAlgorithm", budget_mul, debug, reps=reps, out_path=out_path)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -287,6 +236,6 @@ if __name__ == "__main__":
             print("Path to $SCRATCH location was not found, initializing ray in cwd")
             ray.init(num_cpus=workers)
 
-    cmaes_gnbg(budget, debug=log_level, reps=reps, out_path=out_path)
+    test_algo3(budget, debug=log_level, reps=reps, out_path=out_path)
 
     ray.shutdown()

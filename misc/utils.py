@@ -139,9 +139,8 @@ def correct_mae(ioh_function, logger, budget):
     """
     remaining_evals = np.clip(budget - ioh_function.state.evaluations, 0, budget)
     last_error = float(abs(ioh_function.state.current_best_internal.y - ioh_function.optimum.y))
-    
-    total_absolute_error = logger.sum_ae + (remaining_evals * last_error)
-    return total_absolute_error / budget
+
+    return last_error
 
 class mae_logger(AbstractLogger):
     """Logs the cumulative absolute error over an optimization run."""
@@ -165,8 +164,6 @@ class mae_logger(AbstractLogger):
             raise OverBudgetException
         if log_info.evaluations == self.budget:
             return
-        
-        # print(print(log_info.objective.y))
             
         current_error = float(abs(log_info.raw_y_best - log_info.objective.y))
         

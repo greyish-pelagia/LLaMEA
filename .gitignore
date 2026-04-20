@@ -205,3 +205,4 @@ slurm_logs
 log_analysis.py
 generation_fitness*.png
 benchmarks/*.jsonl
+benchmarks/best*
